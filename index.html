@@ -234,42 +234,14 @@
 		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
 		const ADMIN_PASSWORD = "Zuma Cooper";
-		const STORAGE_KEY = "milo_essays_local";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
-		let essaysCache = [];
 		const $ = selector => document.querySelector(selector);
 
-		function getLocalEssays() {
-			try {
-				const saved = localStorage.getItem(STORAGE_KEY);
-				return saved ? JSON.parse(saved) : [];
-			} catch (error) {
-				return [];
-			}
-		}
-
-		function saveLocalEssays(essays) {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(essays));
-		}
-
-		async function getEssays(forceRefresh = false) {
-			if (!forceRefresh && essaysCache.length) return essaysCache;
-			try {
-				const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
-				if (error) throw error;
-				if (Array.isArray(data)) {
-					tessaysCache = data;
-					return essaysCache;
-				}
-			} catch (error) {
-				const localEssays = getLocalEssays();
-				tessaysCache = localEssays;
-				return localEssays;
-			}
-			const localEssays = getLocalEssays();
-			tessaysCache = localEssays;
-			return localEssays;
+		async function getEssays() {
+			const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
+			if (error) throw error;
+			return data || [];
 		}
 
 		async function renderEssays() {
@@ -343,14 +315,11 @@
 			$("#passwordDialog").close();
 			if (pendingDeleteId) {
 				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
-				let localEssays = getLocalEssays();
 				if (error) {
-					localEssays = localEssays.filter(essay => essay.id !== pendingDeleteId);
-					saveLocalEssays(localEssays);
-				} else {
-					resetPasswordDialog();
+					$("#passwordError").textContent = "Der Essay konnte nicht gelöscht werden.";
+					return;
 				}
-				tessaysCache = localEssays;
+				resetPasswordDialog();
 				renderEssays();
 				return;
 			}
@@ -384,14 +353,17 @@
 				file_data: fileData,
 				created_at: new Date().toISOString()
 			};
-			const { error } = await supabaseClient.from("essays").insert({ title, author: essayRecord.author, content, file_name: essayRecord.file_name, file_type: essayRecord.file_type, file_data: essayRecord.file_data });
-			const localEssays = [essayRecord, ...getLocalEssays()];
-			saveLocalEssays(localEssays);
-			tessaysCache = localEssays;
+			const { error } = await supabaseClient.from("essays").insert({
+				title,
+				author: essayRecord.author,
+				content,
+				file_name: essayRecord.file_name,
+				file_type: essayRecord.file_type,
+				file_data: essayRecord.file_data
+			});
 			if (error) {
-				$("#formError").textContent = "Essay lokal gespeichert. Für Geräte-übergreifende Sichtbarkeit braucht es eine echte gemeinsame Datenbank.";
-			} else {
-				$("#formError").textContent = "";
+				$("#formError").textContent = "Der Essay konnte nicht gespeichert werden.";
+				return;
 			}
 			renderEssays();
 			event.target.reset();
@@ -404,3 +376,4 @@
 	</script>
 </body>
 </html>
+
