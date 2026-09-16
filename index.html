@@ -238,48 +238,89 @@
 		let pendingDeleteId = null;
 		const $ = selector => document.querySelector(selector);
 
+		function escapeHtml(value) {
+			return String(value ?? "").replace(/[&<>\"']/g, character => ({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				'"': "&quot;",
+				"'": "&#39;"
+			})[character]);
+		}
+
+		function readFileAsDataUrl(file) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result);
+				reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
+				reader.readAsDataURL(file);
+			});
+		}
+
 		async function getEssays() {
-			const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
+			const { data, error } = await supabaseClient
+				.from("essays")
+				.select("*")
+				.order("created_at", { ascending: false });
 			if (error) throw error;
 			return data || [];
 		}
 
 		async function renderEssays() {
-			let essays;
 			try {
-				essays = await getEssays();
+				const essays = await getEssays();
+				const search = $("#searchInput").value.trim().toLowerCase();
+				const visibleEssays = essays.filter(essay => {
+					if (!search) return true;
+					const haystack = [essay.title, essay.author, essay.content].join(" ").toLowerCase();
+					return haystack.includes(search);
+				});
+
+				$("#essayCount").textContent = `${visibleEssays.length} ${visibleEssays.length === 1 ? "Text" : "Texte"}`;
+				$("#essayList").innerHTML = visibleEssays.length
+					? visibleEssays.map(essay => `
+						<article class="essay">
+							<div>
+								<h3>${escapeHtml(essay.title)}</h3>
+								<div class="essay-meta">${escapeHtml(essay.author || "Unbekannt")} &middot; ${escapeHtml(essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : "")}</div>
+							</div>
+							<div class="essay-actions">
+								<button class="read-button" data-read="${essay.id}" type="button">Lesen</button>
+								<button class="delete-button" data-delete="${essay.id}" type="button">Löschen</button>
+							</div>
+						</article>
+					`).join("")
+					: `<p class="empty">${essays.length ? "Keine passenden Essays gefunden." : "Noch keine Essays vorhanden."}</p>`;
+
+				document.querySelectorAll("[data-read]").forEach(button => {
+					button.addEventListener("click", () => openReader(button.dataset.read));
+				});
+				document.querySelectorAll("[data-delete]").forEach(button => {
+					button.addEventListener("click", () => requestDelete(button.dataset.delete));
+				});
 			} catch (error) {
 				$("#essayCount").textContent = "";
 				$("#essayList").innerHTML = '<p class="empty">Die Essays konnten gerade nicht geladen werden.</p>';
-				return;
 			}
-			const search = $("#searchInput").value.trim().toLowerCase();
-			const visibleEssays = essays.filter(essay => !search || [essay.title, essay.author, essay.content].join(" ").toLowerCase().includes(search));
-			$("#essayCount").textContent = `${visibleEssays.length} ${visibleEssays.length === 1 ? "Text" : "Texte"}`;
-			$("#essayList").innerHTML = visibleEssays.length ? visibleEssays.map(essay => `
-				<article class="essay">
-					<div><h3>${escapeHtml(essay.title)}</h3><div class="essay-meta">${escapeHtml(essay.author || "Unbekannt")} &middot; ${escapeHtml(essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : "")}</div></div>
-					<div class="essay-actions"><button class="read-button" data-read="${essay.id}" type="button">Lesen</button><button class="delete-button" data-delete="${essay.id}" type="button">Löschen</button></div>
-				</article>`).join("") : `<p class="empty">${essays.length ? "Keine passenden Essays gefunden." : "Noch keine Essays vorhanden."}</p>`;
-			document.querySelectorAll("[data-read]").forEach(button => button.addEventListener("click", () => openReader(button.dataset.read)));
-			document.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => requestDelete(button.dataset.delete)));
-		}
-
-		function escapeHtml(value) {
-			return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 		}
 
 		async function openReader(id) {
-			const essay = (await getEssays()).find(item => item.id === id);
-			if (!essay) return;
-			$("#readerTitle").textContent = essay.title;
-			$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : ""}`;
-			$("#readerContent").textContent = essay.content || "Diese Datei kann heruntergeladen werden.";
-			$("#readerDownload").href = essay.file_data || URL.createObjectURL(new Blob([essay.content || ""], { type: "text/plain" }));
-			$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
-			$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
-			$("#filePreview").innerHTML = essay.file_type === "application/pdf" && essay.file_data ? `<iframe class="file-preview" src="${essay.file_data}" title="PDF-Vorschau"></iframe>` : "";
-			$("#readerDialog").showModal();
+			try {
+				const essays = await getEssays();
+				const essay = essays.find(item => item.id === id);
+				if (!essay) return;
+
+				$("#readerTitle").textContent = essay.title;
+				$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : ""}`;
+				$("#readerContent").textContent = essay.content || "Diese Datei kann heruntergeladen werden.";
+				$("#readerDownload").href = essay.file_data || URL.createObjectURL(new Blob([essay.content || ""], { type: "text/plain" }));
+				$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
+				$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
+				$("#filePreview").innerHTML = essay.file_type === "application/pdf" && essay.file_data ? `<iframe class="file-preview" src="${essay.file_data}" title="PDF-Vorschau"></iframe>` : "";
+				$("#readerDialog").showModal();
+			} catch (error) {
+				console.error(error);
+			}
 		}
 
 		function requestDelete(id) {
@@ -296,13 +337,16 @@
 			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
 			$("#passwordSubmit").textContent = "Weiter";
 			$("#password").value = "";
+			$("#passwordError").textContent = "";
 		}
 
 		$("#adminButton").addEventListener("click", () => {
 			resetPasswordDialog();
 			$("#passwordDialog").showModal();
 		});
+
 		$("#searchInput").addEventListener("input", renderEssays);
+
 		$("#passwordForm").addEventListener("submit", async event => {
 			event.preventDefault();
 			const passwordInput = $("#password").value.trim();
@@ -310,9 +354,11 @@
 				$("#passwordError").textContent = "Passwort ist nicht korrekt.";
 				return;
 			}
+
 			$("#password").value = "";
 			$("#passwordError").textContent = "";
 			$("#passwordDialog").close();
+
 			if (pendingDeleteId) {
 				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
 				if (error) {
@@ -320,9 +366,10 @@
 					return;
 				}
 				resetPasswordDialog();
-				renderEssays();
+				await renderEssays();
 				return;
 			}
+
 			$("#author").value = "Milo Lesage";
 			$("#addDialog").showModal();
 		});
@@ -332,46 +379,55 @@
 			const file = $("#essayFile").files[0];
 			const title = $("#title").value.trim();
 			let content = $("#content").value.trim();
+			const author = $("#author").value.trim() || "Unbekannt";
 			let fileData = "";
-			if (file && file.type !== "application/pdf") content = content || await file.text();
-			if (file) fileData = await new Promise(resolve => {
-				const reader = new FileReader();
-				reader.onload = () => resolve(reader.result);
-				reader.readAsDataURL(file);
-			});
+			let fileName = "";
+			let fileType = "text/plain";
+
+			if (file) {
+				fileName = file.name;
+				fileType = file.type || "application/octet-stream";
+				if (fileType !== "application/pdf") {
+					content = content || await file.text();
+				}
+				fileData = await readFileAsDataUrl(file);
+			}
+
 			if (!title || (!content && !file)) {
 				$("#formError").textContent = "Bitte gib einen Titel und einen Text oder eine Datei an.";
 				return;
 			}
-			const essayRecord = {
-				id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+
+			const payload = {
 				title,
-				author: $("#author").value.trim() || "Unbekannt",
-				content,
-				file_name: file ? file.name : "",
-				file_type: file ? file.type : "text/plain",
+				author,
+				content: content || "",
+				file_name: fileName,
+				file_type: fileType,
 				file_data: fileData,
 				created_at: new Date().toISOString()
 			};
-			const { error } = await supabaseClient.from("essays").insert({
-				title,
-				author: essayRecord.author,
-				content,
-				file_name: essayRecord.file_name,
-				file_type: essayRecord.file_type,
-				file_data: essayRecord.file_data
-			});
+
+			const { error } = await supabaseClient.from("essays").insert(payload);
 			if (error) {
 				$("#formError").textContent = "Der Essay konnte nicht gespeichert werden.";
+				console.error(error);
 				return;
 			}
-			renderEssays();
-			event.target.reset();
+
+			$("#essayForm").reset();
 			$("#formError").textContent = "";
 			$("#addDialog").close();
+			await renderEssays();
 		});
 
-		document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => $("#" + button.dataset.close).close()));
+		document.querySelectorAll("[data-close]").forEach(button => {
+			button.addEventListener("click", () => {
+				const target = $("#" + button.dataset.close);
+				if (target) target.close();
+			});
+		});
+
 		renderEssays();
 	</script>
 </body>
