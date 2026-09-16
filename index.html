@@ -233,6 +233,7 @@
 	<script>
 		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
+		const ADMIN_EMAIL = "milo.lesage@essay-admin.local";
 		const ADMIN_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
@@ -310,6 +311,16 @@
 				$("#passwordError").textContent = "Passwort ist nicht korrekt.";
 				return;
 			}
+			try {
+				const { error: loginError } = await supabaseClient.auth.signInWithPassword({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+				if (loginError) {
+					const { error: signupError } = await supabaseClient.auth.signUp({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+					if (signupError) throw signupError;
+				}
+			} catch (error) {
+				$("#passwordError").textContent = "Der Zugang konnte nicht aktiviert werden.";
+				return;
+			}
 			$("#password").value = "";
 			$("#passwordError").textContent = "";
 			$("#passwordDialog").close();
@@ -356,4 +367,3 @@
 	</script>
 </body>
 </html>
-
