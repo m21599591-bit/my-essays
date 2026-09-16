@@ -212,14 +212,7 @@
 	<script>
 		const PASSWORD = "Zuma Cooper";
 		const storageKey = "lesesaal-essays";
-		const starterEssay = {
-			id: "starter",
-			title: "Die Kunst, aufmerksam zu sein",
-			author: "Lesesaal",
-			date: "Heute",
-			content: "Aufmerksamkeit ist eine stille Form der Nähe. Sie beginnt dort, wo wir aufhören, den nächsten Gedanken vorzubereiten, und dem gegenwärtigen einen Moment länger zuhören.\n\nVielleicht ist das der Grund, warum Texte bleiben: Sie verlangen nichts Spektakuläres. Nur, dass wir da sind."
-		};
-		const getEssays = () => JSON.parse(localStorage.getItem(storageKey) || "null") || [starterEssay];
+		const getEssays = () => JSON.parse(localStorage.getItem(storageKey) || "null") || [];
 		const saveEssays = essays => localStorage.setItem(storageKey, JSON.stringify(essays));
 		const $ = selector => document.querySelector(selector);
 
