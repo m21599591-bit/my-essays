@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Lesesaal | Essays</title>
+	<style>
+		:root {
+			--paper: #f4f0e8;
+			--ink: #24231f;
+			--muted: #77736b;
+			--line: #d8d1c4;
+			--accent: #9a3f2f;
+			--accent-dark: #743126;
+			--white: #fffdf8;
+			--shadow: 0 12px 30px rgba(53, 42, 29, 0.08);
+		}
+
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			color: var(--ink);
+			background: var(--paper);
+			font-family: Georgia, "Times New Roman", serif;
+			line-height: 1.6;
+		}
+
+		header {
+			border-bottom: 1px solid var(--line);
+			background: rgba(255, 253, 248, 0.72);
+		}
+		.topbar, main { width: min(1080px, calc(100% - 48px)); margin: 0 auto; }
+		.topbar {
+			min-height: 82px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 20px;
+		}
+		.brand {
+			color: var(--ink);
+			font-size: 1.35rem;
+			font-weight: bold;
+			letter-spacing: 0.01em;
+			text-decoration: none;
+		}
+		.brand span { color: var(--accent); }
+		.admin-button, .primary-button {
+			border: 0;
+			border-radius: 3px;
+			color: white;
+			background: var(--accent);
+			cursor: pointer;
+			font: 600 0.84rem Arial, sans-serif;
+			padding: 11px 16px;
+		}
+		.admin-button:hover, .primary-button:hover { background: var(--accent-dark); }
+		main { padding: 74px 0 90px; }
+		.intro { max-width: 680px; margin-bottom: 64px; }
+		.eyebrow {
+			color: var(--accent);
+			font: 700 0.73rem Arial, sans-serif;
+			letter-spacing: 0.17em;
+			text-transform: uppercase;
+		}
+		h1 { margin: 12px 0 16px; font-size: clamp(2.6rem, 6vw, 5rem); font-weight: normal; line-height: 0.98; }
+		.intro p { color: var(--muted); font-size: 1.15rem; margin: 0; max-width: 590px; }
+		.section-heading {
+			align-items: baseline;
+			border-bottom: 1px solid var(--line);
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 0;
+			padding-bottom: 13px;
+		}
+		.section-heading h2 { font-size: 1.25rem; font-weight: normal; margin: 0; }
+		.count { color: var(--muted); font: 0.75rem Arial, sans-serif; }
+		.essay-list { border-bottom: 1px solid var(--line); }
+		.essay {
+			align-items: center;
+			border-bottom: 1px solid var(--line);
+			display: grid;
+			gap: 20px;
+			grid-template-columns: 1fr auto;
+			padding: 26px 0;
+		}
+		.essay:last-child { border-bottom: 0; }
+		.essay h3 { font-size: 1.45rem; font-weight: normal; margin: 0 0 5px; }
+		.essay-meta { color: var(--muted); font: 0.75rem Arial, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
+		.read-button {
+			background: none;
+			border: 1px solid var(--line);
+			border-radius: 3px;
+			color: var(--ink);
+			cursor: pointer;
+			font: 0.8rem Arial, sans-serif;
+			padding: 10px 15px;
+		}
+		.read-button:hover { border-color: var(--accent); color: var(--accent); }
+		.empty { color: var(--muted); padding: 28px 0; }
+
+		dialog {
+			background: var(--white);
+			border: 1px solid var(--line);
+			border-radius: 4px;
+			box-shadow: var(--shadow);
+			color: var(--ink);
+			max-width: 560px;
+			padding: 0;
+			width: calc(100% - 32px);
+		}
+		dialog::backdrop { background: rgba(36, 35, 31, 0.42); }
+		.dialog-inner { padding: 30px; }
+		.dialog-top { display: flex; justify-content: space-between; gap: 20px; }
+		dialog h2 { font-size: 1.7rem; font-weight: normal; margin: 0 0 22px; }
+		.close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1.5rem; line-height: 1; }
+		label { display: block; font: 700 0.75rem Arial, sans-serif; margin: 15px 0 7px; text-transform: uppercase; }
+		input, textarea {
+			background: #faf7f0;
+			border: 1px solid var(--line);
+			border-radius: 2px;
+			color: var(--ink);
+			font: 1rem Georgia, serif;
+			padding: 11px 12px;
+			width: 100%;
+		}
+		textarea { min-height: 130px; resize: vertical; }
+		input:focus, textarea:focus { border-color: var(--accent); outline: 2px solid rgba(154, 63, 47, 0.14); }
+		.hint { color: var(--muted); font: 0.78rem Arial, sans-serif; margin: 9px 0 20px; }
+		.error { color: var(--accent); font: 0.8rem Arial, sans-serif; min-height: 18px; }
+		.reader { max-width: 700px; }
+		.reader h2 { font-size: 2.2rem; line-height: 1.1; margin-bottom: 8px; }
+		.reader .reader-meta { color: var(--muted); font: 0.8rem Arial, sans-serif; margin-bottom: 28px; }
+		.reader-content { white-space: pre-wrap; font-size: 1.08rem; line-height: 1.8; }
+		footer { border-top: 1px solid var(--line); color: var(--muted); font: 0.75rem Arial, sans-serif; padding: 24px; text-align: center; }
+		@media (max-width: 600px) {
+			.topbar, main { width: min(100% - 32px, 1080px); }
+			.topbar { min-height: 70px; }
+			main { padding-top: 50px; }
+			.intro { margin-bottom: 46px; }
+			.essay { align-items: start; grid-template-columns: 1fr; gap: 14px; }
+			.read-button { justify-self: start; }
+			.dialog-inner { padding: 24px 20px; }
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<div class="topbar">
+			<a class="brand" href="#">lese<span>saal</span></a>
+			<button class="admin-button" id="adminButton" type="button">Essay hinzufügen</button>
+		</div>
+	</header>
+
+	<main>
+		<section class="intro">
+			<div class="eyebrow">Eine private Sammlung</div>
+			<h1>Gedanken,<br>festgehalten.</h1>
+			<p>Essays, Notizen und längere Texte an einem ruhigen Ort. Lesen ist für alle offen.</p>
+		</section>
+
+		<section aria-labelledby="collection-title">
+			<div class="section-heading">
+				<h2 id="collection-title">Alle Essays</h2>
+				<span class="count" id="essayCount"></span>
+			</div>
+			<div class="essay-list" id="essayList"></div>
+		</section>
+	</main>
+
+	<footer>lesesaal &middot; eine persönliche Textsammlung</footer>
+
+	<dialog id="passwordDialog">
+		<div class="dialog-inner">
+			<div class="dialog-top"><h2>Zugang</h2><button class="close" data-close="passwordDialog" aria-label="Schließen">&times;</button></div>
+			<p>Das Hinzufügen neuer Texte ist geschützt.</p>
+			<form id="passwordForm">
+				<label for="password">Passwort</label>
+				<input id="password" type="password" autocomplete="current-password" required>
+				<p class="error" id="passwordError"></p>
+				<button class="primary-button" type="submit">Weiter</button>
+			</form>
+		</div>
+	</dialog>
+
+	<dialog id="addDialog">
+		<div class="dialog-inner">
+			<div class="dialog-top"><h2>Essay hinzufügen</h2><button class="close" data-close="addDialog" aria-label="Schließen">&times;</button></div>
+			<form id="essayForm">
+				<label for="title">Titel</label>
+				<input id="title" required placeholder="Zum Beispiel: Über das Warten">
+				<label for="author">Autor</label>
+				<input id="author" placeholder="Name oder leer lassen">
+				<label for="essayFile">Datei (optional)</label>
+				<input id="essayFile" type="file" accept=".txt,.md,.html,.pdf">
+				<p class="hint">Textdateien werden direkt im Browser gelesen. PDF-Dateien werden als Download abgelegt.</p>
+				<label for="content">Oder Text einfügen</label>
+				<textarea id="content" placeholder="Dein Essay ..."></textarea>
+				<p class="error" id="formError"></p>
+				<button class="primary-button" type="submit">Veröffentlichen</button>
+			</form>
+		</div>
+	</dialog>
+
+	<dialog id="readerDialog">
+		<div class="dialog-inner reader">
+			<div class="dialog-top"><div><h2 id="readerTitle"></h2><div class="reader-meta" id="readerMeta"></div></div><button class="close" data-close="readerDialog" aria-label="Schließen">&times;</button></div>
+			<div class="reader-content" id="readerContent"></div>
+		</div>
+	</dialog>
+
+	<script>
+		const PASSWORD = "lesesaal";
+		const storageKey = "lesesaal-essays";
+		const starterEssay = {
+			id: "starter",
+			title: "Die Kunst, aufmerksam zu sein",
+			author: "Lesesaal",
+			date: "Heute",
+			content: "Aufmerksamkeit ist eine stille Form der Nähe. Sie beginnt dort, wo wir aufhören, den nächsten Gedanken vorzubereiten, und dem gegenwärtigen einen Moment länger zuhören.\n\nVielleicht ist das der Grund, warum Texte bleiben: Sie verlangen nichts Spektakuläres. Nur, dass wir da sind."
+		};
+		const getEssays = () => JSON.parse(localStorage.getItem(storageKey) || "null") || [starterEssay];
+		const saveEssays = essays => localStorage.setItem(storageKey, JSON.stringify(essays));
+		const $ = selector => document.querySelector(selector);
+
+		function renderEssays() {
+			const essays = getEssays();
+			$("#essayCount").textContent = `${essays.length} ${essays.length === 1 ? "Text" : "Texte"}`;
+			$("#essayList").innerHTML = essays.length ? essays.map(essay => `
+				<article class="essay">
+					<div><h3>${escapeHtml(essay.title)}</h3><div class="essay-meta">${escapeHtml(essay.author || "Unbekannt")} &middot; ${escapeHtml(essay.date)}</div></div>
+					<button class="read-button" data-read="${essay.id}" type="button">Lesen</button>
+				</article>`).join("") : '<p class="empty">Noch keine Essays vorhanden.</p>';
+			document.querySelectorAll("[data-read]").forEach(button => button.addEventListener("click", () => openReader(button.dataset.read)));
+		}
+
+		function escapeHtml(value) {
+			return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+		}
+
+		function openReader(id) {
+			const essay = getEssays().find(item => item.id === id);
+			if (!essay) return;
+			$("#readerTitle").textContent = essay.title;
+			$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.date}`;
+			$("#readerContent").textContent = essay.content || "Diese Datei kann heruntergeladen werden.";
+			$("#readerDialog").showModal();
+		}
+
+		$("#adminButton").addEventListener("click", () => $("#passwordDialog").showModal());
+		$("#passwordForm").addEventListener("submit", event => {
+			event.preventDefault();
+			if ($("#password").value !== PASSWORD) {
+				$("#passwordError").textContent = "Das Passwort ist nicht korrekt.";
+				return;
+			}
+			$("#password").value = "";
+			$("#passwordError").textContent = "";
+			$("#passwordDialog").close();
+			$("#addDialog").showModal();
+		});
+
+		$("#essayForm").addEventListener("submit", async event => {
+			event.preventDefault();
+			const file = $("#essayFile").files[0];
+			const title = $("#title").value.trim();
+			let content = $("#content").value.trim();
+			if (file && !content && file.type !== "application/pdf") content = await file.text();
+			if (!title || (!content && !file)) {
+				$("#formError").textContent = "Bitte gib einen Titel und einen Text oder eine Datei an.";
+				return;
+			}
+			const essay = { id: crypto.randomUUID(), title, author: $("#author").value.trim() || "Unbekannt", date: new Date().toLocaleDateString("de-DE"), content };
+			saveEssays([...getEssays(), essay]);
+			renderEssays();
+			event.target.reset();
+			$("#formError").textContent = "";
+			$("#addDialog").close();
+		});
+
+		document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => $("#" + button.dataset.close).close()));
+		renderEssays();
+	</script>
+</body>
+</html>
