@@ -234,14 +234,33 @@
 		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
 		const ADMIN_PASSWORD = "Zuma Cooper";
+		const STORAGE_KEY = "milo_essays_local";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
 		const $ = selector => document.querySelector(selector);
 
+		function getLocalEssays() {
+			try {
+				const saved = localStorage.getItem(STORAGE_KEY);
+				return saved ? JSON.parse(saved) : [];
+			} catch (error) {
+				return [];
+			}
+		}
+
+		function saveLocalEssays(essays) {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(essays));
+		}
+
 		async function getEssays() {
-			const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
-			if (error) throw error;
-			return data || [];
+			try {
+				const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
+				if (error) throw error;
+				if (Array.isArray(data)) return data;
+			} catch (error) {
+				return getLocalEssays();
+			}
+			return getLocalEssays();
 		}
 
 		async function renderEssays() {
@@ -315,8 +334,12 @@
 			$("#passwordDialog").close();
 			if (pendingDeleteId) {
 				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
-				if (error) $("#passwordError").textContent = "Der Essay konnte nicht gelöscht werden.";
-				resetPasswordDialog();
+				if (error) {
+					const localEssays = getLocalEssays().filter(essay => essay.id !== pendingDeleteId);
+					saveLocalEssays(localEssays);
+				} else {
+					resetPasswordDialog();
+				}
 				renderEssays();
 				return;
 			}
@@ -340,10 +363,23 @@
 				$("#formError").textContent = "Bitte gib einen Titel und einen Text oder eine Datei an.";
 				return;
 			}
-			const { error } = await supabaseClient.from("essays").insert({ title, author: $("#author").value.trim() || "Unbekannt", content, file_name: file ? file.name : "", file_type: file ? file.type : "text/plain", file_data: fileData });
+			const essayRecord = {
+				id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+				title,
+				author: $("#author").value.trim() || "Unbekannt",
+				content,
+				file_name: file ? file.name : "",
+				file_type: file ? file.type : "text/plain",
+				file_data: fileData,
+				created_at: new Date().toISOString()
+			};
+			const { error } = await supabaseClient.from("essays").insert({ title, author: essayRecord.author, content, file_name: essayRecord.file_name, file_type: essayRecord.file_type, file_data: essayRecord.file_data });
 			if (error) {
-				$("#formError").textContent = "Der Essay konnte nicht gespeichert werden.";
-				return;
+				const localEssays = [essayRecord, ...getLocalEssays()];
+				saveLocalEssays(localEssays);
+			} else {
+				const localEssays = [essayRecord, ...getLocalEssays()];
+				saveLocalEssays(localEssays);
 			}
 			renderEssays();
 			event.target.reset();
