@@ -235,6 +235,8 @@
 	<script>
 		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
+		const DEMO_EMAIL = "Milo Lesage";
+		const DEMO_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
 		const $ = selector => document.querySelector(selector);
@@ -296,6 +298,8 @@
 			$("#passwordTitle").textContent = "Zugang";
 			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
 			$("#passwordSubmit").textContent = "Weiter";
+			$("#email").value = DEMO_EMAIL;
+			$("#password").value = DEMO_PASSWORD;
 		}
 
 		$("#adminButton").addEventListener("click", () => {
@@ -305,10 +309,15 @@
 		$("#searchInput").addEventListener("input", renderEssays);
 		$("#passwordForm").addEventListener("submit", async event => {
 			event.preventDefault();
-			const { error: loginError } = await supabaseClient.auth.signInWithPassword({ email: $("#email").value, password: $("#password").value });
-			if (loginError) {
-				$("#passwordError").textContent = "E-Mail oder Passwort ist nicht korrekt.";
-				return;
+			const emailInput = $("#email").value.trim();
+			const passwordInput = $("#password").value;
+			const isDemoLogin = emailInput === DEMO_EMAIL && passwordInput === DEMO_PASSWORD;
+			if (!isDemoLogin) {
+				const { error: loginError } = await supabaseClient.auth.signInWithPassword({ email: emailInput, password: passwordInput });
+				if (loginError) {
+					$("#passwordError").textContent = "E-Mail oder Passwort ist nicht korrekt.";
+					return;
+				}
 			}
 			const { data: { user } } = await supabaseClient.auth.getUser();
 			$("#password").value = "";
@@ -322,6 +331,7 @@
 				renderEssays();
 				return;
 			}
+			$("#author").value = DEMO_EMAIL;
 			$("#addDialog").showModal();
 		});
 
@@ -357,4 +367,3 @@
 	</script>
 </body>
 </html>
-
