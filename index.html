@@ -210,7 +210,7 @@
 	</dialog>
 
 	<script>
-		const PASSWORD = "lesesaal";
+		const PASSWORD = "Zuma Cooper";
 		const storageKey = "lesesaal-essays";
 		const starterEssay = {
 			id: "starter",
@@ -244,6 +244,16 @@
 			$("#readerTitle").textContent = essay.title;
 			$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.date}`;
 			$("#readerContent").textContent = essay.content || "Diese Datei kann heruntergeladen werden.";
+			if (essay.fileData) {
+				const link = document.createElement("a");
+				link.href = essay.fileData;
+				link.download = essay.fileName;
+				link.textContent = `Datei herunterladen: ${essay.fileName}`;
+				link.style.display = "block";
+				link.style.marginTop = "24px";
+				link.style.color = "var(--accent)";
+				$("#readerContent").append(link);
+			}
 			$("#readerDialog").showModal();
 		}
 
@@ -265,12 +275,18 @@
 			const file = $("#essayFile").files[0];
 			const title = $("#title").value.trim();
 			let content = $("#content").value.trim();
-			if (file && !content && file.type !== "application/pdf") content = await file.text();
+			let fileData = "";
+			if (file && file.type !== "application/pdf") content = content || await file.text();
+			if (file) fileData = await new Promise(resolve => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result);
+				reader.readAsDataURL(file);
+			});
 			if (!title || (!content && !file)) {
 				$("#formError").textContent = "Bitte gib einen Titel und einen Text oder eine Datei an.";
 				return;
 			}
-			const essay = { id: crypto.randomUUID(), title, author: $("#author").value.trim() || "Unbekannt", date: new Date().toLocaleDateString("de-DE"), content };
+			const essay = { id: crypto.randomUUID(), title, author: $("#author").value.trim() || "Unbekannt", date: new Date().toLocaleDateString("de-DE"), content, fileName: file ? file.name : "", fileData };
 			saveEssays([...getEssays(), essay]);
 			renderEssays();
 			event.target.reset();
