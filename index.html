@@ -193,8 +193,6 @@
 			<div class="dialog-top"><h2 id="passwordTitle">Zugang</h2><button class="close" data-close="passwordDialog" aria-label="Schließen">&times;</button></div>
 			<p id="passwordDescription">Das Hinzufügen neuer Texte ist geschützt.</p>
 			<form id="passwordForm">
-				<label for="email">E-Mail</label>
-				<input id="email" type="email" autocomplete="email" required>
 				<label for="password">Passwort</label>
 				<input id="password" type="password" autocomplete="current-password" required>
 				<p class="error" id="passwordError"></p>
@@ -235,8 +233,7 @@
 	<script>
 		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
-		const DEMO_EMAIL = "Milo Lesage";
-		const DEMO_PASSWORD = "Zuma Cooper";
+		const ADMIN_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
 		const $ = selector => document.querySelector(selector);
@@ -298,8 +295,7 @@
 			$("#passwordTitle").textContent = "Zugang";
 			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
 			$("#passwordSubmit").textContent = "Weiter";
-			$("#email").value = DEMO_EMAIL;
-			$("#password").value = DEMO_PASSWORD;
+			$("#password").value = ADMIN_PASSWORD;
 		}
 
 		$("#adminButton").addEventListener("click", () => {
@@ -309,19 +305,12 @@
 		$("#searchInput").addEventListener("input", renderEssays);
 		$("#passwordForm").addEventListener("submit", async event => {
 			event.preventDefault();
-			const emailInput = $("#email").value.trim();
-			const passwordInput = $("#password").value;
-			const isDemoLogin = emailInput === DEMO_EMAIL && passwordInput === DEMO_PASSWORD;
-			if (!isDemoLogin) {
-				const { error: loginError } = await supabaseClient.auth.signInWithPassword({ email: emailInput, password: passwordInput });
-				if (loginError) {
-					$("#passwordError").textContent = "E-Mail oder Passwort ist nicht korrekt.";
-					return;
-				}
+			const passwordInput = $("#password").value.trim();
+			if (passwordInput !== ADMIN_PASSWORD) {
+				$("#passwordError").textContent = "Passwort ist nicht korrekt.";
+				return;
 			}
-			const { data: { user } } = await supabaseClient.auth.getUser();
 			$("#password").value = "";
-			$("#email").value = "";
 			$("#passwordError").textContent = "";
 			$("#passwordDialog").close();
 			if (pendingDeleteId) {
@@ -331,7 +320,7 @@
 				renderEssays();
 				return;
 			}
-			$("#author").value = DEMO_EMAIL;
+			$("#author").value = "Milo Lesage";
 			$("#addDialog").showModal();
 		});
 
@@ -367,3 +356,4 @@
 	</script>
 </body>
 </html>
+
