@@ -98,6 +98,20 @@
 		}
 		.read-button:hover { border-color: var(--accent); color: var(--accent); }
 		.empty { color: var(--muted); padding: 28px 0; }
+		.search-wrap { margin: 28px 0 0; }
+		.search-wrap input { max-width: 420px; }
+		.delete-button {
+			background: none;
+			border: 0;
+			color: var(--muted);
+			cursor: pointer;
+			font: 0.75rem Arial, sans-serif;
+			padding: 8px 0;
+		}
+		.delete-button:hover { color: var(--accent); }
+		.essay-actions { align-items: center; display: flex; gap: 16px; }
+		.download-link { color: var(--accent); display: inline-block; font: 0.85rem Arial, sans-serif; margin-top: 24px; }
+		.file-preview { border: 1px solid var(--line); height: 520px; margin-top: 24px; width: 100%; }
 
 		dialog {
 			background: var(--white);
@@ -164,6 +178,10 @@
 				<h2 id="collection-title">Alle Essays</h2>
 				<span class="count" id="essayCount"></span>
 			</div>
+			<div class="search-wrap">
+				<label for="searchInput">Essays durchsuchen</label>
+				<input id="searchInput" type="search" placeholder="Titel, Autor oder Text suchen">
+			</div>
 			<div class="essay-list" id="essayList"></div>
 		</section>
 	</main>
@@ -172,13 +190,13 @@
 
 	<dialog id="passwordDialog">
 		<div class="dialog-inner">
-			<div class="dialog-top"><h2>Zugang</h2><button class="close" data-close="passwordDialog" aria-label="Schließen">&times;</button></div>
-			<p>Das Hinzufügen neuer Texte ist geschützt.</p>
+			<div class="dialog-top"><h2 id="passwordTitle">Zugang</h2><button class="close" data-close="passwordDialog" aria-label="Schließen">&times;</button></div>
+			<p id="passwordDescription">Das Hinzufügen neuer Texte ist geschützt.</p>
 			<form id="passwordForm">
 				<label for="password">Passwort</label>
 				<input id="password" type="password" autocomplete="current-password" required>
 				<p class="error" id="passwordError"></p>
-				<button class="primary-button" type="submit">Weiter</button>
+				<button class="primary-button" id="passwordSubmit" type="submit">Weiter</button>
 			</form>
 		</div>
 	</dialog>
@@ -206,25 +224,31 @@
 		<div class="dialog-inner reader">
 			<div class="dialog-top"><div><h2 id="readerTitle"></h2><div class="reader-meta" id="readerMeta"></div></div><button class="close" data-close="readerDialog" aria-label="Schließen">&times;</button></div>
 			<div class="reader-content" id="readerContent"></div>
+			<a class="download-link" id="readerDownload" download>Essay herunterladen</a>
+			<div id="filePreview"></div>
 		</div>
 	</dialog>
 
 	<script>
 		const PASSWORD = "Zuma Cooper";
 		const storageKey = "lesesaal-essays";
+		let pendingDeleteId = null;
 		const getEssays = () => JSON.parse(localStorage.getItem(storageKey) || "null") || [];
 		const saveEssays = essays => localStorage.setItem(storageKey, JSON.stringify(essays));
 		const $ = selector => document.querySelector(selector);
 
 		function renderEssays() {
 			const essays = getEssays();
-			$("#essayCount").textContent = `${essays.length} ${essays.length === 1 ? "Text" : "Texte"}`;
-			$("#essayList").innerHTML = essays.length ? essays.map(essay => `
+			const search = $("#searchInput").value.trim().toLowerCase();
+			const visibleEssays = essays.filter(essay => !search || [essay.title, essay.author, essay.content].join(" ").toLowerCase().includes(search));
+			$("#essayCount").textContent = `${visibleEssays.length} ${visibleEssays.length === 1 ? "Text" : "Texte"}`;
+			$("#essayList").innerHTML = visibleEssays.length ? visibleEssays.map(essay => `
 				<article class="essay">
 					<div><h3>${escapeHtml(essay.title)}</h3><div class="essay-meta">${escapeHtml(essay.author || "Unbekannt")} &middot; ${escapeHtml(essay.date)}</div></div>
-					<button class="read-button" data-read="${essay.id}" type="button">Lesen</button>
-				</article>`).join("") : '<p class="empty">Noch keine Essays vorhanden.</p>';
+					<div class="essay-actions"><button class="read-button" data-read="${essay.id}" type="button">Lesen</button><button class="delete-button" data-delete="${essay.id}" type="button">Löschen</button></div>
+				</article>`).join("") : `<p class="empty">${essays.length ? "Keine passenden Essays gefunden." : "Noch keine Essays vorhanden."}</p>`;
 			document.querySelectorAll("[data-read]").forEach(button => button.addEventListener("click", () => openReader(button.dataset.read)));
+			document.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => requestDelete(button.dataset.delete)));
 		}
 
 		function escapeHtml(value) {
@@ -237,20 +261,33 @@
 			$("#readerTitle").textContent = essay.title;
 			$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.date}`;
 			$("#readerContent").textContent = essay.content || "Diese Datei kann heruntergeladen werden.";
-			if (essay.fileData) {
-				const link = document.createElement("a");
-				link.href = essay.fileData;
-				link.download = essay.fileName;
-				link.textContent = `Datei herunterladen: ${essay.fileName}`;
-				link.style.display = "block";
-				link.style.marginTop = "24px";
-				link.style.color = "var(--accent)";
-				$("#readerContent").append(link);
-			}
+			$("#readerDownload").href = essay.fileData || URL.createObjectURL(new Blob([essay.content || ""], { type: "text/plain" }));
+			$("#readerDownload").download = essay.fileName || `${essay.title}.txt`;
+			$("#readerDownload").textContent = essay.fileName ? `Datei herunterladen: ${essay.fileName}` : "Essay als Text herunterladen";
+			$("#filePreview").innerHTML = essay.fileType === "application/pdf" && essay.fileData ? `<iframe class="file-preview" src="${essay.fileData}" title="PDF-Vorschau"></iframe>` : "";
 			$("#readerDialog").showModal();
 		}
 
-		$("#adminButton").addEventListener("click", () => $("#passwordDialog").showModal());
+		function requestDelete(id) {
+			pendingDeleteId = id;
+			$("#passwordTitle").textContent = "Essay löschen";
+			$("#passwordDescription").textContent = "Nur Milo Lesage kann Essays löschen.";
+			$("#passwordSubmit").textContent = "Löschen bestätigen";
+			$("#passwordDialog").showModal();
+		}
+
+		function resetPasswordDialog() {
+			pendingDeleteId = null;
+			$("#passwordTitle").textContent = "Zugang";
+			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
+			$("#passwordSubmit").textContent = "Weiter";
+		}
+
+		$("#adminButton").addEventListener("click", () => {
+			resetPasswordDialog();
+			$("#passwordDialog").showModal();
+		});
+		$("#searchInput").addEventListener("input", renderEssays);
 		$("#passwordForm").addEventListener("submit", event => {
 			event.preventDefault();
 			if ($("#password").value !== PASSWORD) {
@@ -260,6 +297,12 @@
 			$("#password").value = "";
 			$("#passwordError").textContent = "";
 			$("#passwordDialog").close();
+			if (pendingDeleteId) {
+				saveEssays(getEssays().filter(essay => essay.id !== pendingDeleteId));
+				resetPasswordDialog();
+				renderEssays();
+				return;
+			}
 			$("#addDialog").showModal();
 		});
 
@@ -279,7 +322,7 @@
 				$("#formError").textContent = "Bitte gib einen Titel und einen Text oder eine Datei an.";
 				return;
 			}
-			const essay = { id: crypto.randomUUID(), title, author: $("#author").value.trim() || "Unbekannt", date: new Date().toLocaleDateString("de-DE"), content, fileName: file ? file.name : "", fileData };
+			const essay = { id: crypto.randomUUID(), title, author: $("#author").value.trim() || "Unbekannt", date: new Date().toLocaleDateString("de-DE"), content, fileName: file ? file.name : "", fileType: file ? file.type : "text/plain", fileData };
 			saveEssays([...getEssays(), essay]);
 			renderEssays();
 			event.target.reset();
