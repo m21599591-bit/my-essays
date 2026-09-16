@@ -231,7 +231,7 @@
 
 	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 	<script>
-		const SUPABASE_URL = "https://yzqriynhktcbsowhfcv.supabase.co";
+		const SUPABASE_URL = "https://yzqrriynhktcbsowhfcv.supabase.co";
 		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
 		const ADMIN_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -300,7 +300,7 @@
 				});
 			} catch (error) {
 				$("#essayCount").textContent = "";
-				$("#essayList").innerHTML = '<p class="empty">Die Essays konnten gerade nicht geladen werden.</p>';
+				$("#essayList").innerHTML = `<p class="empty">Die Essays konnten gerade nicht geladen werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</p>`;
 			}
 		}
 
@@ -362,7 +362,7 @@
 			if (pendingDeleteId) {
 				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
 				if (error) {
-					$("#passwordError").textContent = "Der Essay konnte nicht gelöscht werden.";
+					$("#passwordError").textContent = `Der Essay konnte nicht gelöscht werden: ${error.message || "Unbekannter Fehler"}`;
 					return;
 				}
 				resetPasswordDialog();
@@ -410,7 +410,7 @@
 
 			const { error } = await supabaseClient.from("essays").insert(payload);
 			if (error) {
-				$("#formError").textContent = "Der Essay konnte nicht gespeichert werden.";
+				$("#formError").textContent = `Der Essay konnte nicht gespeichert werden: ${error.message || "Unbekannter Fehler"}`;
 				console.error(error);
 				return;
 			}
