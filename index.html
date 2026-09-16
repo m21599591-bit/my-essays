@@ -237,6 +237,7 @@
 		const STORAGE_KEY = "milo_essays_local";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
+		let essaysCache = [];
 		const $ = selector => document.querySelector(selector);
 
 		function getLocalEssays() {
@@ -252,15 +253,23 @@
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(essays));
 		}
 
-		async function getEssays() {
+		async function getEssays(forceRefresh = false) {
+			if (!forceRefresh && essaysCache.length) return essaysCache;
 			try {
 				const { data, error } = await supabaseClient.from("essays").select("*").order("created_at", { ascending: false });
 				if (error) throw error;
-				if (Array.isArray(data)) return data;
+				if (Array.isArray(data)) {
+					tessaysCache = data;
+					return essaysCache;
+				}
 			} catch (error) {
-				return getLocalEssays();
+				const localEssays = getLocalEssays();
+				tessaysCache = localEssays;
+				return localEssays;
 			}
-			return getLocalEssays();
+			const localEssays = getLocalEssays();
+			tessaysCache = localEssays;
+			return localEssays;
 		}
 
 		async function renderEssays() {
@@ -314,7 +323,7 @@
 			$("#passwordTitle").textContent = "Zugang";
 			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
 			$("#passwordSubmit").textContent = "Weiter";
-			$("#password").value = ADMIN_PASSWORD;
+			$("#password").value = "";
 		}
 
 		$("#adminButton").addEventListener("click", () => {
@@ -334,12 +343,14 @@
 			$("#passwordDialog").close();
 			if (pendingDeleteId) {
 				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
+				let localEssays = getLocalEssays();
 				if (error) {
-					const localEssays = getLocalEssays().filter(essay => essay.id !== pendingDeleteId);
+					localEssays = localEssays.filter(essay => essay.id !== pendingDeleteId);
 					saveLocalEssays(localEssays);
 				} else {
 					resetPasswordDialog();
 				}
+				tessaysCache = localEssays;
 				renderEssays();
 				return;
 			}
@@ -374,12 +385,13 @@
 				created_at: new Date().toISOString()
 			};
 			const { error } = await supabaseClient.from("essays").insert({ title, author: essayRecord.author, content, file_name: essayRecord.file_name, file_type: essayRecord.file_type, file_data: essayRecord.file_data });
+			const localEssays = [essayRecord, ...getLocalEssays()];
+			saveLocalEssays(localEssays);
+			tessaysCache = localEssays;
 			if (error) {
-				const localEssays = [essayRecord, ...getLocalEssays()];
-				saveLocalEssays(localEssays);
+				$("#formError").textContent = "Essay lokal gespeichert. Für Geräte-übergreifende Sichtbarkeit braucht es eine echte gemeinsame Datenbank.";
 			} else {
-				const localEssays = [essayRecord, ...getLocalEssays()];
-				saveLocalEssays(localEssays);
+				$("#formError").textContent = "";
 			}
 			renderEssays();
 			event.target.reset();
@@ -392,4 +404,3 @@
 	</script>
 </body>
 </html>
-
