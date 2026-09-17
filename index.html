@@ -152,6 +152,22 @@
 		.reader-content h3, .reader-content h4 { line-height: 1.25; margin: 1.6em 0 0.55em; }
 		.reader-content h3 { font-size: 1.45rem; }
 		.reader-content h4 { font-size: 1.2rem; }
+		.feedback-section { border-top: 1px solid var(--line); margin-top: 42px; padding-top: 28px; }
+		.feedback-section h3 { font-size: 1.4rem; font-weight: normal; margin: 0 0 16px; }
+		.feedback-form { max-width: 620px; }
+		.star-rating { display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 3px; }
+		.star-rating input { height: 1px; opacity: 0; position: absolute; width: 1px; }
+		.star-rating label { color: var(--line); cursor: pointer; font: 2rem/1 Arial, sans-serif; margin: 0; padding: 0 2px; text-transform: none; }
+		.star-rating label:hover, .star-rating label:hover ~ label, .star-rating input:checked ~ label { color: #d48a28; }
+		.star-rating input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 3px; }
+		.feedback-list { margin-top: 32px; }
+		.feedback-item { border-top: 1px solid var(--line); padding: 16px 0; }
+		.feedback-item:first-child { border-top: 0; padding-top: 0; }
+		.feedback-item-top { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+		.feedback-stars { color: #d48a28; font: 1rem Arial, sans-serif; letter-spacing: 0.08em; white-space: nowrap; }
+		.feedback-author, .feedback-date { color: var(--muted); font: 0.75rem Arial, sans-serif; }
+		.feedback-message { margin: 7px 0 0; white-space: pre-wrap; }
+		.feedback-status { color: var(--muted); font: 0.8rem Arial, sans-serif; min-height: 18px; }
 		footer { border-top: 1px solid var(--line); color: var(--muted); font: 0.75rem Arial, sans-serif; padding: 24px; text-align: center; }
 		@media (max-width: 600px) {
 			.topbar, main { width: min(100% - 32px, 1080px); }
@@ -165,6 +181,7 @@
 			#readerDialog .dialog-inner { padding: 24px 18px; }
 			#readerDialog .reader h2 { font-size: 1.8rem; }
 			#readerDialog .reader-content { font-size: 1.08rem; line-height: 1.75; }
+			.feedback-item-top { align-items: flex-start; flex-direction: column; gap: 4px; }
 		}
 	</style>
 </head>
@@ -236,6 +253,26 @@
 			<div class="reader-content" id="readerContent"></div>
 			<a class="download-link" id="readerDownload" download>Essay herunterladen</a>
 			<div id="filePreview"></div>
+			<section class="feedback-section" aria-labelledby="feedbackTitle">
+				<h3 id="feedbackTitle">Dein Feedback</h3>
+				<form class="feedback-form" id="feedbackForm">
+					<label>Bewertung</label>
+					<div class="star-rating" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen">
+						<input id="rating5" name="rating" type="radio" value="5" required><label for="rating5" title="5 Sterne">&#9733;</label>
+						<input id="rating4" name="rating" type="radio" value="4"><label for="rating4" title="4 Sterne">&#9733;</label>
+						<input id="rating3" name="rating" type="radio" value="3"><label for="rating3" title="3 Sterne">&#9733;</label>
+						<input id="rating2" name="rating" type="radio" value="2"><label for="rating2" title="2 Sterne">&#9733;</label>
+						<input id="rating1" name="rating" type="radio" value="1"><label for="rating1" title="1 Stern">&#9733;</label>
+					</div>
+					<label for="feedbackAuthor">Name (optional)</label>
+					<input id="feedbackAuthor" maxlength="80" placeholder="Dein Name">
+					<label for="feedbackMessage">Nachricht</label>
+					<textarea id="feedbackMessage" maxlength="2000" placeholder="Was denkst du über diesen Essay?" required></textarea>
+					<p class="error" id="feedbackError"></p>
+					<button class="primary-button" type="submit">Feedback senden</button>
+				</form>
+				<div class="feedback-list" id="feedbackList"></div>
+			</section>
 		</div>
 	</dialog>
 
@@ -248,6 +285,7 @@
 		const ADMIN_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
+		let activeEssayId = null;
 		const $ = selector => document.querySelector(selector);
 
 		function escapeHtml(value) {
@@ -341,6 +379,29 @@
 			}).join("");
 		}
 
+		function renderFeedback(feedback) {
+			if (!feedback.length) return `<p class="feedback-status">Noch kein Feedback. Sei die erste Person.</p>`;
+			return feedback.map(item => `
+				<div class="feedback-item">
+					<div class="feedback-item-top">
+						<span class="feedback-stars" aria-label="${item.rating} von 5 Sternen">${"★".repeat(item.rating)}${"☆".repeat(5 - item.rating)}</span>
+						<span class="feedback-author">${escapeHtml(item.author || "Anonym")} · ${item.created_at ? new Date(item.created_at).toLocaleDateString("de-DE") : ""}</span>
+					</div>
+					<p class="feedback-message">${escapeHtml(item.message)}</p>
+				</div>
+			`).join("");
+		}
+
+		async function loadFeedback(essayId) {
+			const { data, error } = await supabaseClient
+				.from("feedback")
+				.select("rating, author, message, created_at")
+				.eq("essay_id", essayId)
+				.order("created_at", { ascending: false });
+			if (error) throw error;
+			$("#feedbackList").innerHTML = renderFeedback(data || []);
+		}
+
 		async function getEssays() {
 			const { data, error } = await supabaseClient
 				.from("essays")
@@ -393,6 +454,10 @@
 				const essays = await getEssays();
 				const essay = essays.find(item => item.id === id);
 				if (!essay) return;
+				activeEssayId = essay.id;
+				$("#feedbackForm").reset();
+				$("#feedbackError").textContent = "";
+				$("#feedbackList").innerHTML = `<p class="feedback-status">Feedback wird geladen ...</p>`;
 
 				$("#readerTitle").textContent = essay.title;
 				$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : ""}`;
@@ -405,11 +470,38 @@
 				$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
 				$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
 				$("#filePreview").innerHTML = essay.file_type === "application/pdf" && essay.file_data ? `<iframe class="file-preview" src="${essay.file_data}" title="PDF-Vorschau"></iframe>` : "";
+				await loadFeedback(essay.id);
 				$("#readerDialog").showModal();
 			} catch (error) {
+				$("#feedbackList").innerHTML = `<p class="feedback-status">Feedback konnte nicht geladen werden.</p>`;
 				console.error(error);
 			}
 		}
+
+		$("#feedbackForm").addEventListener("submit", async event => {
+			event.preventDefault();
+			const rating = Number($("input[name=rating]:checked")?.value);
+			const message = $("#feedbackMessage").value.trim();
+			if (!rating || !message || !activeEssayId) {
+				$("#feedbackError").textContent = "Bitte wähle eine Bewertung und schreibe eine Nachricht.";
+				return;
+			}
+
+			const { error } = await supabaseClient.from("feedback").insert({
+				["essay_id"]: activeEssayId,
+				rating,
+				author: $("#feedbackAuthor").value.trim() || "Anonym",
+				message,
+				created_at: new Date().toISOString()
+			});
+			if (error) {
+				$("#feedbackError").textContent = `Das Feedback konnte nicht gespeichert werden: ${error.message || "Unbekannter Fehler"}`;
+				return;
+			}
+			$("#feedbackForm").reset();
+			$("#feedbackError").textContent = "Danke für dein Feedback.";
+			await loadFeedback(activeEssayId);
+		});
 
 		function requestDelete(id) {
 			pendingDeleteId = id;
