@@ -269,7 +269,7 @@
 			});
 		}
 
-		function groupPdfItemsIntoLines(items) {
+		function groupPdfItemsIntoLines(items, styles) {
 			const lines = [];
 			items
 				.filter(item => item.str.trim())
@@ -290,7 +290,9 @@
 					const sortedItems = line.items.sort((first, second) => first.transform[4] - second.transform[4]);
 					return {
 						text: sortedItems.map(item => item.str).join(" ").replace(/\s+/g, " ").trim(),
-						fontSize: Math.max(...sortedItems.map(item => Math.abs(item.transform[3]) || item.height || 0))
+						fontSize: Math.max(...sortedItems.map(item => Math.abs(item.transform[3]) || item.height || 0)),
+						isBold: sortedItems.some(item => /bold|black|heavy|semibold/i.test(`${item.fontName} ${styles[item.fontName]?.fontFamily || ""}`)),
+						isItalic: sortedItems.some(item => /italic|oblique/i.test(`${item.fontName} ${styles[item.fontName]?.fontFamily || ""}`))
 					};
 				});
 		}
@@ -300,7 +302,9 @@
 			const bodyFontSize = fontSizes[Math.floor(fontSizes.length / 2)] || 12;
 			return lines.map(line => {
 				if (line.text.length <= 140 && line.fontSize >= bodyFontSize * 1.45) return `# ${line.text}`;
-				if (line.text.length <= 180 && line.fontSize >= bodyFontSize * 1.2) return `## ${line.text}`;
+				if (line.text.length <= 180 && (line.fontSize >= bodyFontSize * 1.2 || (line.isBold && line.fontSize >= bodyFontSize * 1.05))) return `## ${line.text}`;
+				if (line.isBold) return `**${line.text}**`;
+				if (line.isItalic) return `_${line.text}_`;
 				return line.text;
 			}).join("\n\n");
 		}
@@ -310,7 +314,7 @@
 			for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
 				const page = await pdf.getPage(pageNumber);
 				const textContent = await page.getTextContent();
-				pages.push(markPdfHeadings(groupPdfItemsIntoLines(textContent.items)));
+				pages.push(markPdfHeadings(groupPdfItemsIntoLines(textContent.items, textContent.styles)));
 			}
 			return pages.join("\n\n").trim();
 		}
@@ -331,6 +335,8 @@
 				const trimmedBlock = block.trim();
 				if (trimmedBlock.startsWith("# ")) return `<h3>${escapeHtml(trimmedBlock.slice(2))}</h3>`;
 				if (trimmedBlock.startsWith("## ")) return `<h4>${escapeHtml(trimmedBlock.slice(3))}</h4>`;
+				if (trimmedBlock.startsWith("**") && trimmedBlock.endsWith("**")) return `<p><strong>${escapeHtml(trimmedBlock.slice(2, -2))}</strong></p>`;
+				if (trimmedBlock.startsWith("_") && trimmedBlock.endsWith("_")) return `<p><em>${escapeHtml(trimmedBlock.slice(1, -1))}</em></p>`;
 				return `<p>${escapeHtml(trimmedBlock).replace(/\n/g, "<br>")}</p>`;
 			}).join("");
 		}
