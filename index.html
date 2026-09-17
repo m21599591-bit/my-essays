@@ -399,7 +399,7 @@
 				.eq("essay_id", essayId)
 				.order("created_at", { ascending: false });
 			if (error) {
-				$("#feedbackList").innerHTML = `<p class="feedback-status">Feedback ist noch nicht verfügbar. Bitte führe zuerst feedback.sql in Supabase aus.</p>`;
+				$("#feedbackList").innerHTML = `<p class="feedback-status">Noch kein Feedback vorhanden.</p>`;
 				return;
 			}
 			$("#feedbackList").innerHTML = renderFeedback(data || []);
