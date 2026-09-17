@@ -398,7 +398,10 @@
 				.select("rating, author, message, created_at")
 				.eq("essay_id", essayId)
 				.order("created_at", { ascending: false });
-			if (error) throw error;
+			if (error) {
+				$("#feedbackList").innerHTML = `<p class="feedback-status">Feedback ist noch nicht verfügbar. Bitte führe zuerst feedback.sql in Supabase aus.</p>`;
+				return;
+			}
 			$("#feedbackList").innerHTML = renderFeedback(data || []);
 		}
 
@@ -470,10 +473,9 @@
 				$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
 				$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
 				$("#filePreview").innerHTML = essay.file_type === "application/pdf" && essay.file_data ? `<iframe class="file-preview" src="${essay.file_data}" title="PDF-Vorschau"></iframe>` : "";
-				await loadFeedback(essay.id);
 				$("#readerDialog").showModal();
+				await loadFeedback(essay.id);
 			} catch (error) {
-				$("#feedbackList").innerHTML = `<p class="feedback-status">Feedback konnte nicht geladen werden.</p>`;
 				console.error(error);
 			}
 		}
