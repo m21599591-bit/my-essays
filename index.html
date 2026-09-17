@@ -145,7 +145,13 @@
 		.reader { max-width: 700px; }
 		.reader h2 { font-size: 2.2rem; line-height: 1.1; margin-bottom: 8px; }
 		.reader .reader-meta { color: var(--muted); font: 0.8rem Arial, sans-serif; margin-bottom: 28px; }
-		.reader-content { white-space: pre-wrap; font-size: 1.08rem; line-height: 1.8; }
+		#readerDialog { max-width: 900px; width: calc(100% - 24px); }
+		.reader { max-width: none; }
+		.reader-content { font-size: 1.12rem; line-height: 1.85; overflow-wrap: anywhere; }
+		.reader-content p { margin: 0 0 1.25em; }
+		.reader-content h3, .reader-content h4 { line-height: 1.25; margin: 1.6em 0 0.55em; }
+		.reader-content h3 { font-size: 1.45rem; }
+		.reader-content h4 { font-size: 1.2rem; }
 		footer { border-top: 1px solid var(--line); color: var(--muted); font: 0.75rem Arial, sans-serif; padding: 24px; text-align: center; }
 		@media (max-width: 600px) {
 			.topbar, main { width: min(100% - 32px, 1080px); }
@@ -155,6 +161,10 @@
 			.essay { align-items: start; grid-template-columns: 1fr; gap: 14px; }
 			.read-button { justify-self: start; }
 			.dialog-inner { padding: 24px 20px; }
+			#readerDialog { width: calc(100% - 16px); }
+			#readerDialog .dialog-inner { padding: 24px 18px; }
+			#readerDialog .reader h2 { font-size: 1.8rem; }
+			#readerDialog .reader-content { font-size: 1.08rem; line-height: 1.75; }
 		}
 	</style>
 </head>
@@ -259,27 +269,70 @@
 			});
 		}
 
-		async function extractPdfText(file) {
-			const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+		function groupPdfItemsIntoLines(items) {
+			const lines = [];
+			items
+				.filter(item => item.str.trim())
+				.sort((first, second) => second.transform[5] - first.transform[5] || first.transform[4] - second.transform[4])
+				.forEach(item => {
+					const itemY = item.transform[5];
+					let line = lines.find(candidate => Math.abs(candidate.y - itemY) < 4);
+					if (!line) {
+						line = { y: itemY, items: [] };
+						lines.push(line);
+					}
+					line.items.push(item);
+				});
+
+			return lines
+				.sort((first, second) => second.y - first.y)
+				.map(line => {
+					const sortedItems = line.items.sort((first, second) => first.transform[4] - second.transform[4]);
+					return {
+						text: sortedItems.map(item => item.str).join(" ").replace(/\s+/g, " ").trim(),
+						fontSize: Math.max(...sortedItems.map(item => Math.abs(item.transform[3]) || item.height || 0))
+					};
+				});
+		}
+
+		function markPdfHeadings(lines) {
+			const fontSizes = lines.map(line => line.fontSize).filter(fontSize => fontSize > 0).sort((first, second) => first - second);
+			const bodyFontSize = fontSizes[Math.floor(fontSizes.length / 2)] || 12;
+			return lines.map(line => {
+				if (line.text.length <= 140 && line.fontSize >= bodyFontSize * 1.45) return `# ${line.text}`;
+				if (line.text.length <= 180 && line.fontSize >= bodyFontSize * 1.2) return `## ${line.text}`;
+				return line.text;
+			}).join("\n\n");
+		}
+
+		async function extractPdfTextFromDocument(pdf) {
 			const pages = [];
 			for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
 				const page = await pdf.getPage(pageNumber);
 				const textContent = await page.getTextContent();
-				pages.push(textContent.items.map(item => item.str).join(" "));
+				pages.push(markPdfHeadings(groupPdfItemsIntoLines(textContent.items)));
 			}
 			return pages.join("\n\n").trim();
+		}
+
+		async function extractPdfText(file) {
+			const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+			return extractPdfTextFromDocument(pdf);
 		}
 
 		async function extractPdfTextFromDataUrl(dataUrl) {
 			const response = await fetch(dataUrl);
 			const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await response.arrayBuffer()) }).promise;
-			const pages = [];
-			for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-				const page = await pdf.getPage(pageNumber);
-				const textContent = await page.getTextContent();
-				pages.push(textContent.items.map(item => item.str).join(" "));
-			}
-			return pages.join("\n\n").trim();
+			return extractPdfTextFromDocument(pdf);
+		}
+
+		function renderEssayContent(content) {
+			return content.split(/\n{2,}/).map(block => {
+				const trimmedBlock = block.trim();
+				if (trimmedBlock.startsWith("# ")) return `<h3>${escapeHtml(trimmedBlock.slice(2))}</h3>`;
+				if (trimmedBlock.startsWith("## ")) return `<h4>${escapeHtml(trimmedBlock.slice(3))}</h4>`;
+				return `<p>${escapeHtml(trimmedBlock).replace(/\n/g, "<br>")}</p>`;
+			}).join("");
 		}
 
 		async function getEssays() {
@@ -341,7 +394,7 @@
 				if (!content && essay.file_type === "application/pdf" && essay.file_data) {
 					content = await extractPdfTextFromDataUrl(essay.file_data);
 				}
-				$("#readerContent").textContent = content || "Diese Datei enthält keinen auslesbaren Text.";
+				$("#readerContent").innerHTML = renderEssayContent(content || "Diese Datei enthält keinen auslesbaren Text.");
 				$("#readerDownload").href = essay.file_data || URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
 				$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
 				$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
