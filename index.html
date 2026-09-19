@@ -164,9 +164,11 @@
 		.feedback-item { border-top: 1px solid var(--line); padding: 16px 0; }
 		.feedback-item:first-child { border-top: 0; padding-top: 0; }
 		.feedback-item-top { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+				.feedback-item-info { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; }
 		.feedback-stars { color: #d48a28; font: 1rem Arial, sans-serif; letter-spacing: 0.08em; white-space: nowrap; }
 		.feedback-author, .feedback-date { color: var(--muted); font: 0.75rem Arial, sans-serif; }
 		.feedback-message { margin: 7px 0 0; white-space: pre-wrap; }
+		.feedback-item-info .delete-button { border: 1px solid var(--line); padding: 4px 8px; }
 		.feedback-status { color: var(--muted); font: 0.8rem Arial, sans-serif; min-height: 18px; }
 		footer { border-top: 1px solid var(--line); color: var(--muted); font: 0.75rem Arial, sans-serif; padding: 24px; text-align: center; }
 		@media (max-width: 600px) {
@@ -285,6 +287,7 @@
 		const ADMIN_PASSWORD = "Zuma Cooper";
 		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		let pendingDeleteId = null;
+		let pendingDeleteFeedbackId = null;
 		let activeEssayId = null;
 		const $ = selector => document.querySelector(selector);
 
@@ -388,6 +391,7 @@
 						<span class="feedback-author">${escapeHtml(item.author || "Anonym")} · ${item.created_at ? new Date(item.created_at).toLocaleDateString("de-DE") : ""}</span>
 					</div>
 					<p class="feedback-message">${escapeHtml(item.message)}</p>
+					<button class="delete-button" data-delete-feedback="${escapeHtml(item.id)}" type="button">Feedback löschen</button>
 				</div>
 			`).join("");
 		}
@@ -395,7 +399,7 @@
 		async function loadFeedback(essayId) {
 			const { data, error } = await supabaseClient
 				.from("feedback")
-				.select("rating, author, message, created_at")
+				.select("id, rating, author, message, created_at")
 				.eq("essay_id", essayId)
 				.order("created_at", { ascending: false });
 			if (error) {
@@ -403,6 +407,9 @@
 				return;
 			}
 			$("#feedbackList").innerHTML = renderFeedback(data || []);
+			document.querySelectorAll("[data-delete-feedback]").forEach(button => {
+				button.addEventListener("click", () => requestDeleteFeedback(button.dataset.deleteFeedback));
+			});
 		}
 
 		async function getEssays() {
@@ -507,14 +514,25 @@
 
 		function requestDelete(id) {
 			pendingDeleteId = id;
+			pendingDeleteFeedbackId = null;
 			$("#passwordTitle").textContent = "Essay löschen";
 			$("#passwordDescription").textContent = "Nur Milo Lesage kann Essays löschen.";
 			$("#passwordSubmit").textContent = "Löschen bestätigen";
 			$("#passwordDialog").showModal();
 		}
 
+		function requestDeleteFeedback(id) {
+			pendingDeleteId = null;
+			pendingDeleteFeedbackId = id;
+			$("#passwordTitle").textContent = "Feedback löschen";
+			$("#passwordDescription").textContent = "Nur mit dem Passwort für Zuma Cooper möglich.";
+			$("#passwordSubmit").textContent = "Löschen bestätigen";
+			$("#passwordDialog").showModal();
+		}
+
 		function resetPasswordDialog() {
 			pendingDeleteId = null;
+			pendingDeleteFeedbackId = null;
 			$("#passwordTitle").textContent = "Zugang";
 			$("#passwordDescription").textContent = "Das Hinzufügen neuer Texte ist geschützt.";
 			$("#passwordSubmit").textContent = "Weiter";
@@ -549,6 +567,18 @@
 				}
 				resetPasswordDialog();
 				await renderEssays();
+				return;
+			}
+
+			if (pendingDeleteFeedbackId) {
+				const feedbackId = pendingDeleteFeedbackId;
+				const { error } = await supabaseClient.from("feedback").delete().eq("id", feedbackId);
+				if (error) {
+					$("#passwordError").textContent = `Das Feedback konnte nicht gelöscht werden: ${error.message || "Unbekannter Fehler"}`;
+					return;
+				}
+				resetPasswordDialog();
+				await loadFeedback(activeEssayId);
 				return;
 			}
 
