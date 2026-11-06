@@ -221,7 +221,7 @@
 				<input id="author" placeholder="Name oder leer lassen">
 				<label for="essayFile">Datei (optional)</label>
 				<input id="essayFile" type="file" accept=".txt,.md,.html,.pdf">
-				<p class="hint">Textdateien werden direkt im Browser gelesen. PDF-Dateien werden als Download abgelegt.</p>
+				<p class="hint">Textdateien werden direkt im Browser gelesen. PDF-Dateien werden als Text extrahiert und lokal gespeichert.</p>
 				<label for="content">Oder Text einfügen</label>
 				<textarea id="content" placeholder="Dein Essay ..."></textarea>
 				<p class="error" id="formError"></p>
@@ -239,17 +239,28 @@
 		</div>
 	</dialog>
 
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 	<script>
 		window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-		const SUPABASE_URL = "https://yzqrriynhktcbsowhfcv.supabase.co";
-		const SUPABASE_KEY = "sb_publishable_zMA6PClD6i-uYMShAGVS8g_RSso9MqP";
 		const ADMIN_PASSWORD = "Zuma Cooper";
-		const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+		const STORAGE_KEY = "milo-essays-v1";
 		let pendingDeleteId = null;
-		let activeEssayId = null;
 		const $ = selector => document.querySelector(selector);
+
+		function loadEssaysFromStorage() {
+			try {
+				const raw = localStorage.getItem(STORAGE_KEY);
+				const essays = raw ? JSON.parse(raw) : [];
+				return Array.isArray(essays) ? essays : [];
+			} catch (error) {
+				console.error("Could not read essays from local storage", error);
+				return [];
+			}
+		}
+
+		function saveEssaysToStorage(essays) {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(essays));
+		}
 
 		function escapeHtml(value) {
 			return String(value ?? "").replace(/[&<>\"']/g, character => ({
@@ -261,13 +272,11 @@
 			})[character]);
 		}
 
-		function readFileAsDataUrl(file) {
-			return new Promise((resolve, reject) => {
-				const reader = new FileReader();
-				reader.onload = () => resolve(reader.result);
-				reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
-				reader.readAsDataURL(file);
-			});
+		function createEssayId() {
+			if (window.crypto && typeof window.crypto.randomUUID === "function") {
+				return window.crypto.randomUUID();
+			}
+			return `essay-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 		}
 
 		function groupPdfItemsIntoLines(items, styles) {
@@ -343,12 +352,7 @@
 		}
 
 		async function getEssays() {
-			const { data, error } = await supabaseClient
-				.from("essays")
-				.select("*")
-				.order("created_at", { ascending: false });
-			if (error) throw error;
-			return data || [];
+			return loadEssaysFromStorage().sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime());
 		}
 
 		async function renderEssays() {
@@ -394,7 +398,6 @@
 				const essays = await getEssays();
 				const essay = essays.find(item => item.id === id);
 				if (!essay) return;
-				activeEssayId = essay.id;
 
 				$("#readerTitle").textContent = essay.title;
 				$("#readerMeta").textContent = `${essay.author || "Unbekannt"} · ${essay.created_at ? new Date(essay.created_at).toLocaleDateString("de-DE") : ""}`;
@@ -403,7 +406,8 @@
 					content = await extractPdfTextFromDataUrl(essay.file_data);
 				}
 				$("#readerContent").innerHTML = renderEssayContent(content || "Diese Datei enthält keinen auslesbaren Text.");
-				$("#readerDownload").href = essay.file_data || URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+				const downloadBlob = new Blob([content || ""], { type: "text/plain;charset=utf-8" });
+				$("#readerDownload").href = essay.file_data || URL.createObjectURL(downloadBlob);
 				$("#readerDownload").download = essay.file_name || `${essay.title}.txt`;
 				$("#readerDownload").textContent = essay.file_name ? `Datei herunterladen: ${essay.file_name}` : "Essay als Text herunterladen";
 				$("#filePreview").innerHTML = essay.file_type === "application/pdf" && essay.file_data ? `<iframe class="file-preview" src="${essay.file_data}" title="PDF-Vorschau"></iframe>` : "";
@@ -450,11 +454,9 @@
 			$("#passwordDialog").close();
 
 			if (pendingDeleteId) {
-				const { error } = await supabaseClient.from("essays").delete().eq("id", pendingDeleteId);
-				if (error) {
-					$("#passwordError").textContent = `Der Essay konnte nicht gelöscht werden: ${error.message || "Unbekannter Fehler"}`;
-					return;
-				}
+				const essays = loadEssaysFromStorage();
+				const nextEssays = essays.filter(essay => essay.id !== pendingDeleteId);
+				saveEssaysToStorage(nextEssays);
 				resetPasswordDialog();
 				await renderEssays();
 				return;
@@ -477,13 +479,15 @@
 			if (file) {
 				fileName = file.name;
 				fileType = file.type || "application/octet-stream";
-				if (fileType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+				const isPdf = fileType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+				if (isPdf) {
 					fileType = "application/pdf";
 					content = await extractPdfText(file);
+					fileData = "";
 				} else {
 					content = content || await file.text();
+					fileData = "";
 				}
-				fileData = await readFileAsDataUrl(file);
 			}
 
 			if (!title || (!content && !file)) {
@@ -492,6 +496,7 @@
 			}
 
 			const payload = {
+				id: createEssayId(),
 				title,
 				author,
 				content: content || "",
@@ -501,12 +506,9 @@
 				created_at: new Date().toISOString()
 			};
 
-			const { error } = await supabaseClient.from("essays").insert(payload);
-			if (error) {
-				$("#formError").textContent = `Der Essay konnte nicht gespeichert werden: ${error.message || "Unbekannter Fehler"}`;
-				console.error(error);
-				return;
-			}
+			const essays = loadEssaysFromStorage();
+			const nextEssays = [payload, ...essays];
+			saveEssaysToStorage(nextEssays);
 
 			$("#essayForm").reset();
 			$("#formError").textContent = "";
@@ -521,6 +523,98 @@
 			});
 		});
 
+		function seedDefaultEssays() {
+			const existing = loadEssaysFromStorage();
+			const existingTitles = new Set(existing.map(essay => essay.title));
+			const defaultEssays = [
+				{
+					id: createEssayId(),
+					title: "Frauenbefreiung ist eine Klassenfrage",
+					author: "Milo Lesage",
+					content: `Frauenbefreiung ist eine Klassenfrage
+
+1. Was uns beigebracht wird
+Frauen halten diese Gesellschaft am Laufen, und zwar jeden Tag. Sie sitzen an der Supermarktkasse, wechseln Verbände auf der Station, unterrichten in Grundschulen, reinigen Büros, schreiben Rechnungen, nähen, kochen, pflegen. Wer morgens um sechs mit dem Bus durch eine Stadt fährt, begegnet ihnen auf dem Weg zur Frühschicht. Und wenn die Schicht vorbei ist, endet der Arbeitstag für viele von ihnen noch lange nicht. Zu Hause warten Kinder, die abgeholt, gefüttert und getröstet werden müssen, ein Haushalt, der von allein nicht läuft, vielleicht ein Vater oder eine Mutter, die Pflege brauchen.
+
+Dieselben Frauen verdienen im Durchschnitt weniger als Männer. Sie arbeiten häufiger in Teilzeit, und sie sind häufiger davon abhängig, dass ein anderer Mensch Geld nach Hause bringt. Das ist keine neue Beobachtung, und die meisten Menschen würden ihr zustimmen. Strittig ist, wie man sie erklärt.
+
+Zwei Erklärungen liegen nahe. Die erste lautet, dass es an Vorurteilen liegt: an Chefs, die Frauen weniger zutrauen, an Kollegen, die Frauen übergehen, an Männern, die zu Hause nicht mit anpacken. Die zweite lautet, dass es eben Entscheidungen sind. Frauen wählen andere Berufe, wollen mehr Zeit mit den Kindern, arbeiten lieber weniger. Beide Erklärungen enthalten etwas Wahres, und beide greifen zu kurz. Sie beschreiben, was Menschen tun, aber sie fragen nicht, unter welchen Bedingungen sie es tun und wem diese Bedingungen nützen.
+
+Dieses Buch vertritt eine andere These. Die Ungleichheit zwischen Frauen und Männern ist kein Zufall und keine Laune der Gewohnheit. Sie hängt damit zusammen, wie unsere Gesellschaft Arbeit, Eigentum und Zeit organisiert. Deshalb halte ich Frauenbefreiung für eine Klassenfrage. Gemeint ist damit nicht, dass Sexismus bloß ein Nebenprodukt der Wirtschaft wäre, das von selbst verschwindet, wenn sich die Wirtschaft ändert. Gemeint ist, dass sich gleiche Rechte auf dem Papier nur dann in ein freies Leben übersetzen, wenn die materiellen Bedingungen stimmen: wenn eine Frau von ihrem eigenen Einkommen leben kann, wenn es einen Kitaplatz gibt, wenn Pflege nicht an ihr hängen bleibt, wenn sie sich eine Trennung leisten könnte. Wer diese Bedingungen übergeht, redet über Befreiung, ohne sie möglich zu machen.
+
+Im Kapitalismus steht nicht der Mensch im Mittelpunkt, sondern der Profit. Die Bedürfnisse der Menschen zählen so weit, wie sie sich mit den Interessen des Kapitals vertragen. Das gilt für Männer wie für Frauen, aber es trifft sie nicht auf die gleiche Weise. Warum das so ist, will ich in den folgenden Kapiteln Schritt für Schritt zeigen. Zuerst muss aber etwas anderes geklärt werden, nämlich die Frage, was eigentlich als weiblich gilt und woher wir das wissen.
+
+Man wird nicht als Frau geboren
+Simone de Beauvoir hat 1949 in Das andere Geschlecht einen Satz geschrieben, der seither oft zitiert wird: „Man kommt nicht als Frau zur Welt, man wird es.“ Sie meinte damit nicht, dass es keine Körper gibt, die Kinder bekommen können. Sie meinte, dass fast alles, was wir mit Weiblichkeit verbinden, nicht aus dem Körper folgt, sondern aus dem, was Gesellschaften daraus machen: Sanftmut, Fürsorglichkeit, Zurückhaltung, die Bereitschaft, sich um andere zu kümmern und die eigenen Wünsche zurückzustellen.
+
+Man kann das beobachten, und zwar früh. Auf einem Spielplatz fallen ein Junge und ein Mädchen hin, beide ungefähr vier Jahre alt, beide fangen an zu weinen. Zum Jungen sagt jemand: „Jungen weinen nicht.“ Zum Mädchen sagt jemand: „Komm, ich puste mal.“ Beide Sätze sind freundlich gemeint, keiner von ihnen ist ein Skandal, und gerade deshalb wirken sie so gut. Der Junge lernt, dass er Schmerz und Schwäche verstecken muss. Das Mädchen lernt, dass Gefühle etwas sind, um das man sich gemeinsam kümmert, und dass es dabei oft die Rolle derjenigen bekommt, die tröstet.
+
+Solche Szenen wiederholen sich tausendfach, und jede einzelne ist unscheinbar. Mädchen bekommen häufiger Puppen, Kinderküchen und Arztkoffer geschenkt, Jungen Bausätze, Autos und Werkzeug. In der Schule hört ein Mädchen eher, dass es brav und ordentlich sein soll, ein Junge eher, dass er sich durchsetzen muss, auch wenn es laut wird. In Werbung, Kinderbüchern und Serien sind die Mütter diejenigen, die das Essen auf den Tisch stellen, und die Väter diejenigen, die vom Büro nach Hause kommen. Niemand beschließt das in einer Sitzung. Es wird weitergegeben durch Erziehung, durch Medien, durch die Arbeitswelt und durch Traditionen, die so selbstverständlich sind, dass man sie kaum noch bemerkt.
+
+Das Ergebnis sind Erwartungen, die sich in jeder Generation wieder neu festsetzen. Frauen sollen fürsorglich, zurückhaltend und bereit sein, sich aufzuopfern. Männer sollen stark sein, Geld verdienen und die Kontrolle behalten. Wer sich an diese Erwartungen hält, wird dafür gelobt. Wer sie verletzt, erlebt Irritation, Spott oder Druck, manchmal freundlich verpackt, manchmal nicht.
+
+Was daraus im Erwachsenenleben wird
+Diese Erwartungen verschwinden nicht, wenn die Kinder erwachsen werden. Sie zeigen sich bei der Berufswahl. Man muss nur schauen, wer in der Pflege, in den Kitas und im Einzelhandel arbeitet, also in Berufen, die oft schlecht bezahlt sind und körperlich wie seelisch viel verlangen, und wer in Technik, Handwerk und Informatik, wo häufig besser gezahlt wird. Natürlich entscheidet jeder Mensch für sich. Aber wie frei ist eine Entscheidung, wenn man von klein auf gehört hat, was zu einem passt und was nicht? Wer als Mädchen zehn Jahre lang gelobt wurde, weil es sich um andere kümmert, wird sich mit größerer Wahrscheinlichkeit für einen Beruf entscheiden, in dem das gefragt ist. Das macht die Entscheidung nicht unecht. Es zeigt nur, dass sie nicht im luftleeren Raum getroffen wird.
+
+Der härteste Test kommt, wenn das erste Kind geboren wird. Zwei Menschen, die bis dahin ähnlich viel gearbeitet, ähnlich viel verdient und die Hausarbeit mehr oder weniger geteilt haben, stehen plötzlich vor der Frage, wer zu Hause bleibt. Und in den meisten Fällen bleibt die Frau. Sie nimmt die Elternzeit, sie reduziert die Stunden, sie wird die Person, die zum Kinderarzt geht, die weiß, wann welche Impfung ansteht und wo die Schuhe in der passenden Größe liegen. Oft heißt es dann, das sei einfach natürlich, schließlich habe sie das Kind zur Welt gebracht. Aber was für Schwangerschaft und Geburt gilt, gilt noch lange nicht für die Jahre danach. Windeln wechseln, Fieber messen, Brotdosen packen und nachts aufstehen kann jeder Mensch. Dass es in den meisten Familien trotzdem die Mutter übernimmt, ist keine Naturgegebenheit. Es ist eine Gewohnheit, die über Jahre eingeübt wurde, und sie fühlt sich nur deshalb natürlich an, weil sie so lange unbefragt geblieben ist.
+
+Dazu kommt etwas, das man leicht übersieht. Die Rollenbilder schaden nicht nur Frauen. Der Junge, der gelernt hat, dass er nicht weinen darf, wird später ein Mann, der nicht über seine Sorgen spricht, der sich schwerer Hilfe holt, der es als Schwäche empfindet, in Teilzeit zu gehen oder für die Kinder zu Hause zu bleiben. Er verliert dabei etwas, und seine Kinder verlieren auch etwas. Es wäre falsch, daraus eine gleichmäßige Verteilung des Leids zu machen, denn die wirtschaftlichen Folgen tragen vor allem die Frauen. Aber es lohnt sich, festzuhalten, dass diese Rollen keine Verschwörung von Männern gegen Frauen sind. Sie sind ein Zwangssystem, in dem fast alle ihren Platz zugewiesen bekommen.
+
+Die Frage, die dieses Buch stellt
+Ein Einwand liegt nahe, und er verdient eine ernsthafte Antwort. Viele Frauen sagen, dass sie ihr Leben genau so führen wollen. Sie wollen bei den Kindern sein, sie wollen weniger arbeiten, sie haben mit ihrem Partner eine Aufteilung gefunden, mit der beide zufrieden sind. Ihnen sollte niemand vorschreiben, was sie wollen sollen. Das ist richtig. Befreiung bedeutet nicht, dass alle Frauen dasselbe wollen müssen, und sie bedeutet erst recht nicht, dass eine Mutter, die zu Hause bleibt, etwas falsch macht.
+
+Aber es ist ein Unterschied, ob jemand sich frei für etwas entscheidet oder ob er in etwas hineinrutscht, weil es keine andere Möglichkeit gibt. Wenn es keinen bezahlbaren Kitaplatz gibt, ist „Ich bleibe lieber zu Hause“ keine reine Wunschäußerung mehr. Wenn der Mann mehr verdient und die Familie das Geld braucht, ist es keine freie Wahl, wer die Stunden reduziert. Wenn Pflege, Kinderbetreuung und Hausarbeit unbezahlt bleiben und niemand sonst sie übernimmt, dann sind diese Arbeiten kein Wunsch, sondern eine Pflicht. Wer die Entscheidungen von Frauen verstehen will, muss sich also ansehen, welche Möglichkeiten ihnen tatsächlich offenstehen und was jede dieser Möglichkeiten kostet.
+
+Daraus ergibt sich die Frage, die sich durch dieses ganze Buch zieht: Wem nützt eine Gesellschaft, in der Frauen einen großen Teil der unbezahlten Arbeit übernehmen und dabei wirtschaftlich abhängig bleiben? Sie ist unbequem, weil man sie nicht beantworten kann, indem man auf einzelne Menschen zeigt. Es geht nicht darum, dass irgendjemand das böse will. Es geht darum, wie ein System aufgebaut ist, in dem bestimmte Arbeiten bezahlt werden und andere nicht, und in dem die unbezahlten Arbeiten ganz überwiegend dort landen, wo es am wenigsten kostet.
+
+Um das zu verstehen, müssen wir weit zurückgehen, zu einer Zeit, in der es das, was wir heute Familie, Ehe und Eigentum nennen, in dieser Form noch nicht gab. Das nächste Kapitel erzählt, wie sich die Stellung der Frau mit den wirtschaftlichen Verhältnissen verändert hat. Danach sehen wir uns an, was der Kapitalismus daraus gemacht hat, welche Antworten die sozialistische Frauenbewegung darauf gefunden hat und was daraus heute folgt.`,
+					file_name: "",
+					file_type: "text/plain",
+					file_data: "",
+					created_at: new Date().toISOString()
+				},
+				{
+					id: createEssayId(),
+					title: "Wer hat die Macht? Staat, Religion und Bevölkerung",
+					author: "Milo Lesage",
+					content: `Wer hat die Macht? Staat, Religion und Bevölkerung
+
+Wer bestimmt am Ende wirklich: der Staat, die Religion oder die Bevölkerung? Das klingt erst einfach, ist es aber nicht. Ein Staat kann viele Gesetze und viel Polizei haben. Wenn die Menschen aber nicht mehr mitmachen, funktioniert er trotzdem nicht mehr. Man sieht das bei Revolutionen: Selbst Regierungen mit starkem Militär können in wenigen Wochen stürzen, wenn ihnen niemand mehr vertraut. Religion dagegen hält Menschen oft zusammen, ganz ohne Polizei oder Gesetze, nur durch Glauben und Druck aus der Gemeinschaft. Man könnte zuerst denken: Der Staat hat die Macht, weil er Gesetze macht und durchsetzt. Aber staatliche Macht funktioniert nicht nur durch Zwang. Die Menschen müssen die Regeln zumindest teilweise befolgen und die Institutionen akzeptieren. Deshalb reicht die Frage "Wer hat die Macht?" nicht aus. Besser ist die Frage: "Wodurch kann jemand überhaupt Macht ausüben?" Und: Regeln befolgen heißt nicht, dass man die Herrschaft auch gut findet. Am Ende zählt also weniger, wie viel Zwang ausgeübt wird, sondern ob die Menschen die Herrschaft akzeptieren.
+
+Der Staat als politische Herrschaft
+In einem Staat leben Menschen mit unterschiedlichen Religionen und Weltanschauungen. Der Staat beansprucht trotzdem die politische und rechtliche Macht über alle Bürger, auch über die verschiedenen Religionsgemeinschaften. Alle müssen sich an dieselben Regeln halten. Der Staat kann verbindliche Regeln für alle Bürger festlegen, auch wenn einzelne Menschen nicht zustimmen. Dafür gibt es Institutionen, die diese Regeln umsetzen. Das unterscheidet staatliche Macht von persönlicher oder religiöser Autorität. Weil staatliche Gesetze für alle gelten, steht der Staat rechtlich über den Religionen. Aber: Der Staat kann nicht jeden Menschen ständig kontrollieren. Er ist darauf angewiesen, dass die Menschen die Gesetze auch wirklich befolgen. Befolgen heißt aber nicht automatisch zustimmen. Ein Mensch kann ein Gesetz befolgen, weil er es richtig findet, weil er es einfach akzeptiert, oder weil er Angst vor Strafe hat. Deshalb muss man unterscheiden zwischen rechtlicher Herrschaft (was erlaubt ist) und echter Anerkennung (was die Menschen wirklich gutheißen).
+
+Daraus ergibt sich die Frage: Warum akzeptieren Menschen staatliche Herrschaft überhaupt?
+
+Religion als persönliche Autorität
+Trotzdem kann Religion für einzelne Menschen wichtiger sein als der Staat. Politisch untergeordnet zu sein heißt nicht, dass man sich auch religiös unterordnet. Ein Mensch kann eine göttliche oder religiöse Autorität über staatliche Entscheidungen stellen. Für ihn persönlich hat Religion dann eine höhere moralische Bedeutung. Rechtlich bleibt er trotzdem an die staatlichen Regeln gebunden. Religion hat normalerweise nicht dieselbe rechtliche Durchsetzungsmacht wie der Staat. Trotzdem kann sie das Verhalten eines Menschen stark beeinflussen. Menschen folgen oft religiösen Regeln, obwohl keine staatliche Strafe dahinter steht. Das zeigt: Menschen handeln nicht nur wegen Gesetzen oder Zwang. Religiöse Überzeugungen beeinflussen, was jemand als richtig oder falsch ansieht. Eine Person kann also gleichzeitig den Staat rechtlich anerkennen und die Religion persönlich für wichtiger halten. Das heißt aber nicht, dass Religion automatisch politische Macht hat. Es zeigt nur, dass Autorität auf verschiedenen Ebenen entstehen kann. Man könnte sagen: Religion kann auf der persönlichen Ebene über dem Staat stehen, während der Staat auf der rechtlichen Ebene über der Religion steht.
+
+Anerkennung oder Zwang?
+Herrschaft kann auf zwei Arten bestehen: durch Anerkennung und Vertrauen (das nennt Max Weber Legitimität), oder durch Zwang und die Unterdrückung von Widerstand. Menschen gehorchen manchmal, weil sie Strafe fürchten. Herrschaft kann aber auch funktionieren, weil Menschen eine Ordnung für richtig oder legitim halten. Die Bevölkerung muss eine Herrschaft also nicht freiwillig anerkennen. Anerkennung macht eine Herrschaft aber stabiler, weil die Menschen dann nicht nur aus Angst folgen, sondern weil sie sie wirklich gutheißen. Dann muss auch nicht jeder Schritt mit Zwang durchgesetzt werden. Wenn Menschen eine Herrschaft als legitim ansehen, folgen sie ihr sogar ohne Zwang.
+
+Anerkennung bedeutet aber nicht automatisch, dass die Zustimmung frei und unabhängig ist. Manche Menschen finden eine Ordnung einfach selbstverständlich, weil sie nie etwas anderes kennengelernt haben. Deshalb sollte man fragen, wie diese Anerkennung überhaupt entstanden ist. Fehlt die Anerkennung, bleibt Zwang trotzdem eine Möglichkeit. Wenn die Anerkennung verloren geht, verlieren die Menschen zuerst das Vertrauen in die Regierung. Die Gesetze werden zwar meistens trotzdem noch befolgt, aber die Legitimität sinkt. Die Menschen folgen dann eher aus Angst vor Strafe oder aus Pflichtgefühl, nicht mehr, weil sie die Herrschaft für gerecht halten. Die Herrschaft besteht also weiter, ist aber stärker von Zwang abhängig und verliert einen Teil ihrer Anerkennung.
+
+Die Bevölkerung als Grundlage der Herrschaft
+Ein Staat besteht nicht nur aus Gesetzen und Institutionen. Er wird von Menschen getragen. Er funktioniert nur, weil die Menschen die Regeln befolgen und Entscheidungen des Staates anerkennen oder zumindest hinnehmen. Wenn sie das nicht mehr tun, kommt es oft zu Protesten, Streiks oder Revolutionen. Das zeigt: Die Bevölkerung ist der Herrschaft nicht völlig ausgeliefert. Wenn viele Menschen gleichzeitig nicht mehr gehorchen, kann das die staatliche Macht ernsthaft schwächen. Trotzdem kann der Staat Widerstand mit Zwang unterdrücken, zum Beispiel durch Polizei oder Gerichte. So kann er erreichen, dass die Menschen weiter gehorchen, auch wenn sie die Herrschaft innerlich nicht mehr akzeptieren.
+
+Das heißt aber nicht, dass die Herrschaft dadurch wieder akzeptiert wird. Kann eine Herrschaft dauerhaft bestehen, wenn sie fast nur durch Zwang zusammengehalten wird? Kurzfristig ja, aber langfristig wird es schwierig, weil sich dadurch immer wieder neuer Widerstand bildet. Anerkennung und Zwang machen Herrschaft also beide möglich, aber aus ganz unterschiedlichen Gründen.
+
+Staat, Religion oder Bevölkerung?
+Am Ende hat der Staat die politische und rechtliche Macht. Religion kann für den Einzelnen trotzdem die höhere moralische Autorität sein. Und die Bevölkerung kann eine Herrschaft entweder anerkennen oder sich ihr nur gezwungenermaßen unterordnen. Herrschaft ist also nie nur eine Sache. Sie hat eine rechtliche, eine moralische und eine faktische Seite, und keine davon gewinnt automatisch gegen die anderen. Staatliche und gesellschaftliche Macht sind auch nicht dasselbe: Der Staat steht rechtlich über der Bevölkerung, ist aber trotzdem auf sie angewiesen, damit seine Herrschaft in der Praxis funktioniert. Religion kann unabhängig vom Staat Autorität besitzen, weil Menschen ihre religiösen Vorstellungen oft einfach als wahr ansehen, ohne sie zu hinterfragen. Deshalb kann dieselbe Person rechtlich dem Staat gehorchen und gleichzeitig ihrer Religion die größere moralische Autorität zusprechen. Die Bevölkerung selbst hat keine automatische rechtliche Macht. Aber durch Anerkennung, Hinnahme oder Widerstand beeinflusst sie entscheidend, wie stabil eine Herrschaft ist. Herrschaft ist also nie eindimensional: Sie hat eine rechtliche, eine moralische und eine faktische Ebene, und keine davon gewinnt automatisch über die anderen.`,
+					file_name: "",
+					file_type: "text/plain",
+					file_data: "",
+					created_at: new Date().toISOString()
+				}
+			];
+
+			const missingEssays = defaultEssays.filter(essay => !existingTitles.has(essay.title));
+			if (missingEssays.length === 0) return;
+
+			saveEssaysToStorage([...missingEssays, ...existing]);
+		}
+
+		seedDefaultEssays();
 		renderEssays();
 	</script>
 </body>
